@@ -1,0 +1,57 @@
+name: email-cleaner
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: email-cleaner
+  cancel-in-progress: false
+
+jobs:
+  clean:
+    if: github.event_name != 'schedule' || vars.CLOUDFLARE_CRON_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Preparar regras privadas
+        env:
+          RULES_YAML: ${{ secrets.RULES_YAML }}
+        run: |
+          if [ -z "$RULES_YAML" ]; then
+            echo "Configure o secret RULES_YAML com as regras da conta." >&2
+            exit 1
+          fi
+          printf '%s\n' "$RULES_YAML" > config/rules.yaml
+
+      - name: Executar limpeza
+        env:
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_TENANT: ${{ secrets.MS_TENANT }}
+          MS_REFRESH_TOKEN: ${{ secrets.MS_REFRESH_TOKEN }}
+          RUN_NUMBER: ${{ github.run_number }}
+          PYTHONUNBUFFERED: "1"
+        run: python -m email_cleaner --config config/rules.yaml --apply
+
+      - name: Guardar auditoria
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cleaner-log-${{ github.run_number }}
+          path: reports/*.log.json
+          retention-days: 14
+          if-no-files-found: ignore

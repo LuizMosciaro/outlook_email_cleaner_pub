@@ -55,31 +55,72 @@ Mensagens já removidas por outra thread/execução (HTTP 404) são registradas 
 Auditoria automática em `reports/cleaner_<run_number>.log.json` (remetente, assunto, ação).
 Use `--run-number N` para fixar o número; `--log-file caminho` sobrescreve o padrão.
 
-## Deploy com custo zero
+## Deploy com GitHub Actions e Cloudflare
 
-**Opção A – GitHub Actions (recomendado).** Workflow pronto em `.github/workflows/email-cleaner.yml`.
-- Publique o repo (privado serve: 2.000 min/mês grátis; o job leva ~1 min).
-- Settings → Secrets: `MS_CLIENT_ID`, `MS_TENANT`, `MS_REFRESH_TOKEN`.
-- Roda a cada 1h (`cron: "1 * * * *"`, UTC); dispara também manualmente em *Run workflow*.
-- `.github/workflows/keepalive.yml` faz um commit vazio mensal: sem atividade por 60 dias o GitHub desativa o `schedule`.
-- Cron do GitHub é *best-effort* (atrasos em pico). Para disparo exato, chame `workflow_dispatch` via API (`cron-job.org` + PAT) ou use a Opção B/C.
-- Commit do `config/rules.yaml` **não** é feito (está no `.gitignore`) — remova a linha para versioná-lo.
+Os workflows estão em `.github/workflows/`. O GitHub Actions executa o limpador
+a cada 15 minutos (UTC) e também permite execução manual. O Cloudflare Worker
+opcional fornece o cron e aciona o mesmo workflow; ele não processa e-mails
+diretamente. Os serviços podem ter limites e custos conforme o plano e o uso.
 
-**Opção B – Cloudflare Worker (cron triggers, 100% grátis).** Cron exato que dispara o workflow da Opção A via `workflow_dispatch` (sem duplicar a lógica de regras).
-Arquivos: [`wrangler.toml`](wrangler.toml:1) e [`worker/index.js`](worker/index.js:1).
+### Configurar a execução do limpador
 
-1. Crie um PAT fine-grained (GitHub → Settings → Developer settings → Personal access tokens) com permissão **Actions: Read and write** apenas neste repo.
-2. Cloudflare → *Workers & Pages* → **Create** → **Worker** → *Connect to Git* (não use **Pages**: `Pages` não tem cron trigger e falha com `Could not detect a directory containing static files`).
-3. Build command: `npx wrangler deploy` · Deploy command: `npx wrangler deploy` · Root directory: `/` (o `wrangler.toml` na raiz já aponta `main = "worker/index.js"`).
-4. Settings → *Variables and Secrets*: `GITHUB_REPO` = `usuario/repo` (var) e `GITHUB_TOKEN` = PAT (secret).
-5. Confirme em *Triggers* → Cron `1 * * * *`; teste com `curl https://<worker>.workers.dev/trigger`.
-6. Se o deploy reclamar de Pages, apague o projeto Pages e repita no fluxo *Worker*.
+1. No GitHub, abra *Settings → Secrets and variables → Actions → Secrets* e crie:
+   - `MS_CLIENT_ID`: Application (client) ID do app do Entra ID.
+   - `MS_TENANT`: `consumers` para conta pessoal ou o tenant ID corporativo.
+   - `MS_REFRESH_TOKEN`: refresh token gerado por `python scripts/login.py`.
+   - `RULES_YAML`: conteúdo YAML das regras a aplicar. Use como base
+     `config/rules.example.yaml`; o workflow o grava em `config/rules.yaml`
+     durante a execução. Assim, critérios pessoais não precisam ser commitados
+     em um repositório público.
+2. Revise as regras e ações com o modo de simulação local antes de salvar
+   `RULES_YAML`. O workflow usa `--apply`; `delete_permanent` é irreversível.
+3. O workflow `.github/workflows/email-cleaner.yml` roda a cada 15 minutos e
+   aceita execução manual em *Actions → email-cleaner → Run workflow*. Os logs
+   de auditoria são anexados à execução por 14 dias.
+4. `.github/workflows/keepalive.yml` registra atividade mensal no repositório
+   para reduzir o risco de o GitHub desativar schedules por inatividade. Ele
+   precisa de permissão de escrita de conteúdo no repositório.
 
-Observação: requer `workflow_dispatch` no workflow (já presente) e consome os mesmos minutos de Actions; o ganho é o disparo pontual. Para rodar sem GitHub Actions, seria preciso reimplementar o motor de regras em JS (Graph `fetch` + refresh token em *Secret*).
+### Usar Cloudflare para agendar o workflow
 
-**Opção C – PC ligado (Task Scheduler).** `python -m email_cleaner --apply` agendado; custo zero mas depende da máquina ligada.
+1. Crie um PAT fine-grained do GitHub limitado a este repositório, com
+   **Actions: Read and write**. Esse token permitirá ao Worker disparar o
+   workflow por `workflow_dispatch`.
+2. Crie um API token Cloudflare com permissão **Workers Scripts: Edit** para a
+   conta onde o Worker será publicado.
+3. Em *Settings → Secrets and variables → Actions → Secrets*, adicione:
+   - `CLOUDFLARE_API_TOKEN`: API token do passo 2.
+   - `CLOUDFLARE_ACCOUNT_ID`: ID da conta Cloudflare.
+4. Faça push para `main`. O workflow
+   `.github/workflows/deploy-cloudflare-worker.yml` publica o código definido
+   em [`wrangler.toml`](wrangler.toml) e [`worker/index.js`](worker/index.js).
+5. No painel Cloudflare, abra o Worker `outlook-email-cleaner` e configure:
+   - Variable `GITHUB_REPO`: `usuario/repositorio`.
+   - Secret `GITHUB_TOKEN`: PAT criado no passo 1.
+   - Secret `TRIGGER_SECRET`: valor aleatório longo para proteger o disparo
+     manual por HTTP.
+6. Em *Settings → Secrets and variables → Actions → Variables*, defina
+   `CLOUDFLARE_CRON_ENABLED` como `true`. Isso faz o workflow ignorar apenas o
+   schedule do GitHub, evitando execuções agendadas duplicadas; o disparo
+   manual continua habilitado. Se não definir essa variável, o schedule do
+   GitHub segue ativo em paralelo.
+7. O Worker aciona o workflow a cada 15 minutos (UTC). Para testar o endpoint
+   manual, use `POST` com o secret:
 
-**Opção D – Azure Function (Consumption).** 1M execuções grátis/mês, timer trigger de 15 min; exige storage account (custo ~centavos) e `azd`.
+   ```sh
+   curl -X POST \
+     -H "Authorization: Bearer <TRIGGER_SECRET>" \
+     https://<worker>.workers.dev/trigger
+   ```
+
+O deploy é feito pelo GitHub Actions; não é necessário criar um site Cloudflare
+Pages nem configurar um build estático. Os crons podem sofrer atrasos ou
+limitações de disponibilidade, e ambos os métodos de agendamento consomem
+execuções/minutos do GitHub Actions.
+
+**Execução local agendada:** no Windows, o Task Scheduler pode executar
+`python -m email_cleaner --config config/rules.yaml --apply`. Mantenha o PC ligado
+e configure as variáveis do `.env`.
 
 ## Manutenção do token
 

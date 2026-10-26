@@ -1,0 +1,32 @@
+name: deploy-cloudflare-worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "worker/**"
+      - "wrangler.toml"
+      - ".github/workflows/deploy-cloudflare-worker.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publicar Cloudflare Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

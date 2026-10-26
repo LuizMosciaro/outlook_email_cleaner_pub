@@ -1,0 +1,16 @@
+name = "outlook-email-cleaner"
+main = "worker/index.js"
+compatibility_date = "2026-10-21"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+GITHUB_BRANCH = "main"
+WORKFLOW_FILE = "email-cleaner.yml"
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
