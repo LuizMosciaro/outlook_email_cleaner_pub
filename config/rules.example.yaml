@@ -1,14 +1,99 @@
+# Copie este arquivo para config/rules.yaml e ajuste os exemplos.
+# O modo padrão é simulação; use --apply para executar as ações.
+
+# Pastas que serão examinadas. Exemplos de pastas padrão do Outlook:
+# inbox, junkemail, deleteditems, archive, sentitems
 folders:
   - inbox
+#  - junkemail
 
+# Remetentes protegidos: mensagens deles nunca são processadas pelas regras.
+# Aceita endereço exato, domínio com ou sem @, e curingas (* e ?).
 allow_senders: []
+# Para ativar exemplos, remova [] e descomente os itens abaixo.
+#  - "pessoa@example.com"
+#  - "@banco.example"
+#  - "*.empresa.example"
+
+# Limites gerais da execução.
 max_actions_per_run: 50
 max_scan_days: 30
 page_size: 50
+# log_file: "reports/minha-execucao.json"  # omitido/"auto": nome automático
+# Simulação é o padrão; --apply executa e --dry-run força simulação.
 
 rules:
+  # Remetente: endereço exato, domínio ou padrão com curingas.
   - name: remetente-de-exemplo
     action: move_to_junk
     senders:
       - "avisos@example.invalid"
     min_age_days: 1
+    
+  # Critério de comprimento: corresponde se algum endereço associado à
+  # mensagem (from, sender ou replyTo) tiver mais que N caracteres.
+  # - name: remetente-muito-longo
+  #   action: mark_read
+  #   sender_longer_than: 40
+
+  # Assunto: cada palavra-chave é uma alternativa (OR).
+  # A comparação ignora maiúsculas, minúsculas e acentos.
+  # - name: assuntos-promocionais
+  #   action: mark_read
+  #   subject_contains:
+  #     - "oferta especial"
+  #     - "última chance"
+
+  # Corpo da mensagem: cada trecho é uma alternativa (OR).
+  # - name: mensagem-com-descadastro
+  #   action: soft_delete
+  #   body_contains:
+  #     - "descadastrar"
+  #     - "unsubscribe"
+
+  # Cabeçalhos: todos os pares informados precisam corresponder.
+  # O nome do cabeçalho não diferencia maiúsculas de minúsculas.
+  # - name: newsletter-com-descadastro
+  #   action: soft_delete
+  #   headers_contain:
+  #     list-unsubscribe: "http"
+  #     list-id: "newsletter"
+
+  # Regex procura no assunto e no corpo já normalizados.
+  # Cada padrão é uma alternativa (OR); use aspas simples para regex YAML.
+  # - name: assunto-com-codigo
+  #   action: move_to_junk
+  #   regex:
+  #     - 'pedido\s*#[0-9]+'
+  #     - '\bbonus\b'
+
+  # Por padrão, critérios diferentes são combinados com OR.
+  # require_all: true exige que todos os critérios definidos correspondam.
+  # min_age_days evita agir em mensagens mais recentes que o número de dias.
+  # - name: newsletter-antiga
+  #   action: soft_delete
+  #   senders:
+  #     - "@newsletter.example"
+  #   subject_contains:
+  #     - "resumo semanal"
+  #   body_contains:
+  #     - "descadastrar"
+  #   headers_contain:
+  #     list-unsubscribe: "http"
+  #   require_all: true
+  #   min_age_days: 7
+
+  # Exclusão definitiva: use somente após revisar a regra em simulação.
+  # - name: remetente-spam-antigo
+  #   action: delete_permanent
+  #   senders:
+  #     - "@spam.example"
+  #   min_age_days: 30
+
+  # Ações disponíveis:
+  # delete_permanent: exclusão definitiva; revise com cuidado.
+  # soft_delete: move para a Lixeira.
+  # move_to_junk: move para Lixo Eletrônico.
+  # mark_read: apenas marca como lida.
+  # Há exemplos comentados de todas as ações acima; descomente/ajuste um
+  # por vez, pois uma regra pode corresponder a várias mensagens.
