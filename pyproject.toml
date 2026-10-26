@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=email_cleaner --cov-report=term-missing --cov-fail-under=95"
+
+[tool.coverage.run]
+branch = false
+omit = ["email_cleaner/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]
+show_missing = true

@@ -1,0 +1,14 @@
+folders:
+  - inbox
+
+allow_senders: []
+max_actions_per_run: 50
+max_scan_days: 30
+page_size: 50
+
+rules:
+  - name: remetente-de-exemplo
+    action: move_to_junk
+    senders:
+      - "avisos@example.invalid"
+    min_age_days: 1
